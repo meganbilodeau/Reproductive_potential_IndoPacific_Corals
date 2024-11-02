@@ -1,0 +1,677 @@
+---
+title: "Research_graphs"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-10-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(funspace)
+library(missForest)
+library(caret)
+library(RColorBrewer)
+library(ggbiplot)
+library(viridis)
+library(forcats) 
+library(patchwork)
+library(lme4)
+
+
+```
+
+Final Plots for Research Paper 
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE}
+
+##Q-Q plots for imputed fecudnity values 
+coral_data_imputed <- read.csv(file="imputedtraitdata.csv")
+
+coral_data <- read.csv(file = "funspace_data.csv")
+
+coral_data <- coral_data %>%
+  select("Species", "subclass", "GrowthForm_CTD", "Abund_CTD" ,"IUCNstatus", "MeanPCcover", "coralcover", "Range", "ReefArea_Range", "family_molecules", "family_morphology","larval", "IUCN.conservation.status", "Depth.lower", "Depth.upper", "Oocyte.size.at.maturity", "Range.size", "Colony.maximum.diameter" , "Corallite.width.maximum", "Corallite.width.minimum", "Growth.rate", "Skeletal.density", "Skeletal.micro.density", "Tissue.thickness", "Colony.area","Colony.fecundity", "Colony.shape.factor", "Polyp.fecundity", "Polyps.per.area", "Size.at.maturity","Age.at.maturity", "Eggs.per.area", "Generation.time")
+
+
+ppa <- coral_data %>%
+  select(Species, Polyps.per.area)
+
+ppa_imputed <- coral_data_imputed %>%
+  select(Species, Polyps.per.area)
+
+ca <- coral_data %>%
+  select(Species, Colony.area)
+
+ca_imputed <- coral_data_imputed %>%
+  select(Species, Colony.area)
+
+# Combine measured and imputed data for Polyps.per.area
+ppa_combined <- ppa %>%
+  rename(Original = Polyps.per.area) %>%
+  left_join(ppa_imputed %>% rename(Imputed = Polyps.per.area), by = "Species")
+
+# Combine measured and imputed data for Colony.area
+ca_combined <- ca %>%
+  rename(Original = Colony.area) %>%
+  left_join(ca_imputed %>% rename(Imputed = Colony.area), by = "Species")
+
+ggplot(ppa_combined, aes(sample = Imputed)) +
+  stat_qq() +
+  stat_qq_line(aes(sample = Original), color = "red") +
+  labs(title = "Q-Q Plot for Polyps per Area (Imputed Values with Measured Line)",
+       x = "Theoretical Quantiles (Measured Values)",
+       y = "Sample Quantiles (Imputed Values)") +
+  theme_minimal()
+
+# Q-Q Plot for Colony.area (Imputed values plotted, measured as reference line)
+ggplot(ca_combined, aes(sample = Imputed)) +
+  stat_qq() +
+  stat_qq_line(aes(sample = Original), color = "red") +
+  labs(title = "Q-Q Plot for Colony Area (Imputed Values with Measured Line)",
+       x = "Theoretical Quantiles (Measured Values)",
+       y = "Sample Quantiles (Imputed Values)") +
+  theme_minimal()
+
+```
+
+__Compare Fecudnity per cm^2 and Indo-pacific Fecundity__
+
+
+Fecundity 
+```{r,echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, fig.width=15, fig.height=6}
+imputed <- read_csv(file = "imputed_fecundity.csv")
+
+imputed_long <- imputed %>%
+  select(Species, Genus, subclass, GrowthForm_CTD, fecundity, Colony.fecundity, IndoPacific_fecundity) %>%
+  pivot_longer(cols = c(fecundity, Colony.fecundity, IndoPacific_fecundity),
+               names_to = "Fecundity_Type", values_to = "Fecundity_Value")
+
+fecundity_data <- imputed_long %>%
+  filter(Fecundity_Type == "fecundity")
+
+colony_data <- imputed_long %>%
+  filter(Fecundity_Type == "Colony.fecundity")
+
+indo_pacific_data <- imputed_long %>%
+  filter(Fecundity_Type == "IndoPacific_fecundity")
+
+fecundity_order <- fecundity_data %>%
+  group_by(Genus) %>%
+  summarize(median_fecundity = median(Fecundity_Value, na.rm = TRUE)) %>%
+  arrange(desc(median_fecundity)) %>%
+  pull(Genus)
+
+fecundity_data$Genus <- factor(fecundity_data$Genus, levels = fecundity_order)
+colony_data$Genus <- factor(colony_data$Genus, levels = fecundity_order)
+indo_pacific_data$Genus <- factor(indo_pacific_data$Genus, levels = fecundity_order)
+
+num_genera <- length(fecundity_order)
+genus_colors <- colorRampPalette(brewer.pal(12, "Spectral"))(num_genera)
+names(genus_colors) <- fecundity_order  # Name the colors by genus for consistency
+
+
+ggplot(fecundity_data, aes(x = Genus, y = Fecundity_Value, fill = Genus)) +
+  geom_boxplot(alpha = 0.6) +
+  geom_jitter(color = "black", size = 1, width = 0.2, alpha = 0.7) +
+  scale_y_log10() +
+  scale_fill_manual(values = genus_colors) +
+  labs(
+       x = "Genus", y = expression("Fecundity " * cm^2 * " (log scale)")) +
+  theme(
+    axis.title = element_text(face = "bold", size = 14),               # Bold and large axis titles
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),      # Large x-axis text for genus names
+    axis.text.y = element_text(size = 12),                             # Large y-axis text
+    panel.grid = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black")
+  ) +
+  guides(fill = "none")
+
+```
+
+
+Average Highest and Lowest Values per Genus
+```{r,echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, fig.width=15, fig.height=6}
+
+fecundity_data %>%
+  group_by(Genus) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange(desc(Average_Fecundity)) %>%
+  slice(1:5)
+
+fecundity_data %>%
+  group_by(Genus) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange((Average_Fecundity)) %>%
+  slice(1:5)
+
+mean(fecundity_data$Fecundity_Value)
+```
+
+Average Highest and Lowest Values per Species 
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE, fig.width=15, fig.height=6}
+
+fecundity_data %>%
+  group_by(Species) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange(desc(Average_Fecundity)) %>%
+  slice(1:5)
+
+fecundity_data %>%
+  group_by(Species) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange((Average_Fecundity)) %>%
+  slice(1:5)
+
+
+```
+
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE, fig.width=15, fig.height=6}
+
+ggplot(colony_data, aes(x = Genus, y = Fecundity_Value, fill = Genus)) +
+  geom_boxplot(alpha = 0.6) +
+  geom_jitter(color = "black", size = 1, width = 0.2, alpha = 0.7) +
+  scale_y_log10() +
+  scale_fill_manual(values = genus_colors) +
+  labs(
+       x = "Genus", y = expression("Colony Fecundity (log scale)")) +
+  theme(
+    axis.title = element_text(face = "bold", size = 14),               # Bold and large axis titles
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),      # Large x-axis text for genus names
+    axis.text.y = element_text(size = 12),                             # Large y-axis text
+    legend.title = element_text(face = "bold", size = 12),             # Bold and larger legend title
+    legend.text = element_text(size = 11),                             # Larger legend text
+    panel.grid = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black")
+  )+
+  guides(fill = "none")
+```
+
+Average Highest and Lowest Values per Genus
+```{r,echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, fig.width=15, fig.height=6}
+colony_data %>%
+  group_by(Genus) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange(desc(Average_Fecundity)) %>%
+  slice(1:5)
+
+colony_data %>%
+  group_by(Genus) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange((Average_Fecundity)) %>%
+  slice(1:5)
+
+mean(colony_data$Fecundity_Value)
+```
+
+Average Highest and Lowest Values per Species 
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE, fig.width=15, fig.height=6}
+
+colony_data %>%
+  group_by(Species) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange(desc(Average_Fecundity)) %>%
+  slice(1:5)
+
+colony_data %>%
+  group_by(Species) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange((Average_Fecundity)) %>%
+  slice(1:5)
+```
+
+Indopacific Fecundity 
+
+*Using fecundity per cm^2 and the coverage calculated in Dietzel et al to determine the Indopacific fecundity* 
+
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE, fig.width=15, fig.height=6}
+
+fecundity_order <- indo_pacific_data %>%
+  group_by(Genus) %>%
+  summarize(median_fecundity = median(Fecundity_Value, na.rm = TRUE)) %>%
+  arrange(desc(median_fecundity)) %>%
+  pull(Genus)
+
+fecundity_data$Genus <- factor(fecundity_data$Genus, levels = fecundity_order)
+colony_data$Genus <- factor(colony_data$Genus, levels = fecundity_order)
+indo_pacific_data$Genus <- factor(indo_pacific_data$Genus, levels = fecundity_order)
+
+
+ggplot(indo_pacific_data, aes(x = Genus, y = Fecundity_Value, fill = Genus)) +
+  geom_boxplot(alpha = 0.6) +
+  geom_jitter(color = "black", size = 1, width = 0.2, alpha = 0.7) +
+  scale_y_log10() +
+  scale_fill_manual(values = genus_colors) +
+  labs(
+       x = "Genus", y = expression("Indo-Pacific Fecundity " * km^2 * "(log scale)")) +
+  theme(
+    axis.title = element_text(face = "bold", size = 14),               # Bold and large axis titles
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),      # Large x-axis text for genus names
+    axis.text.y = element_text(size = 12),                             # Large y-axis text
+    legend.title = element_text(face = "bold", size = 12),             # Bold and larger legend title
+    legend.text = element_text(size = 11),                             # Larger legend text
+    panel.grid = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black")
+  )+
+  guides(fill = "none")
+
+```
+
+
+Total number of eggs produced, Average Highest and Lowest Values per Genus 
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE, fig.width=15, fig.height=6}
+
+sum(indo_pacific_data$Fecundity_Value)
+
+indo_pacific_data %>%
+  group_by(Genus) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange(desc(Average_Fecundity)) %>%
+  slice(1:5)
+
+indo_pacific_data %>%
+  group_by(Genus) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange((Average_Fecundity)) %>%
+  slice(1:5)
+
+mean(indo_pacific_data$Fecundity_Value)
+```
+
+Average Highest and Lowest Values per Species 
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE, fig.width=15, fig.height=6}
+
+indo_pacific_data %>%
+  group_by(Species) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange(desc(Average_Fecundity)) %>%
+  slice(1:5)
+
+indo_pacific_data %>%
+  group_by(Species) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange((Average_Fecundity)) %>%
+  slice(1:5)
+```
+
+Statistical Analysis 
+
+
+Took the mean for each fecundity type then determining distance from mean and then did the anova on those values instead? 
+
+
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE, fig.width=15, fig.height=6}
+
+imputed_long <- imputed %>%
+  select(Species, Genus, subclass, GrowthForm_CTD, fecundity, Colony.fecundity, IndoPacific_fecundity) %>%
+  pivot_longer(cols = c(fecundity, Colony.fecundity, IndoPacific_fecundity),
+               names_to = "Fecundity_Type", values_to = "Fecundity_Value")
+
+imputed_long <- imputed_long %>%
+  group_by(Fecundity_Type) %>%
+  mutate(Mean_Fecundity = mean(Fecundity_Value, na.rm = TRUE),
+         SD_Fecundity = sd(Fecundity_Value, na.rm = TRUE),
+         Z_Score = (Fecundity_Value - Mean_Fecundity) / SD_Fecundity)
+
+ggplot(imputed_long, aes(x = Genus, y = Z_Score, fill = Fecundity_Type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(y = "Z-Score (Deviation from Mean)", x = "Genus") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+
+rank_correlation <- cor.test(rank(fecundity_data$Fecundity_Value), rank(indo_pacific_data$Fecundity_Value), method = "spearman")
+
+anova_test <- aov(Z_Score ~ Genus * Fecundity_Type, data = imputed_long)
+summary(anova_test)
+
+```
+
+This one shows that genera do play a role but fecundity type is not significant, going to go based on this for now it feels like it makes more sense for comparing the fecundity values.
+
+_Trends in Highest Reproductive fecundity across fecundity levels_
+
+Growth Form 
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE, fig.width=10, fig.height=5}
+# Step 1: Identify the top 10 genera for each fecundity type
+top10_fecundity <- imputed %>%
+  group_by(GrowthForm_CTD) %>%
+  summarize(Total_Fecundity = sum(fecundity, na.rm = TRUE)) %>%
+  arrange(desc(Total_Fecundity)) %>%
+  slice(1:6) %>%
+  pull(GrowthForm_CTD)
+
+top10_colony <- imputed %>%
+  group_by(GrowthForm_CTD) %>%
+  summarize(Total_Colony_Fecundity = sum(Colony.fecundity, na.rm = TRUE)) %>%
+  arrange(desc(Total_Colony_Fecundity)) %>%
+  slice(1:6) %>%
+  pull(GrowthForm_CTD)
+
+top10_indo_pacific <- imputed %>%
+  group_by(GrowthForm_CTD) %>%
+  summarize(Total_IndoPacific_Fecundity = sum(IndoPacific_fecundity, na.rm = TRUE)) %>%
+  arrange(desc(Total_IndoPacific_Fecundity)) %>%
+  slice(1:6) %>%
+  pull(GrowthForm_CTD)
+
+# Step 2: Create separate dataframes for each fecundity type, categorizing genera as "Top 10" or "Other"
+fecundity_data <- imputed %>%
+  mutate(GrowthForm_CTD_Category = ifelse(GrowthForm_CTD %in% top10_fecundity, GrowthForm_CTD, "Other")) %>%
+  group_by(GrowthForm_CTD_Category) %>%
+  summarize(Value = sum(fecundity, na.rm = TRUE)) %>%
+  mutate(Fecundity_Type = "Fecundity")
+
+colony_data <- imputed %>%
+  mutate(GrowthForm_CTD_Category = ifelse(GrowthForm_CTD %in% top10_colony, GrowthForm_CTD, "Other")) %>%
+  group_by(GrowthForm_CTD_Category) %>%
+  summarize(Value = sum(Colony.fecundity, na.rm = TRUE)) %>%
+  mutate(Fecundity_Type = "Colony Fecundity")
+
+indo_pacific_data <- imputed %>%
+  mutate(GrowthForm_CTD_Category = ifelse(GrowthForm_CTD %in% top10_indo_pacific, GrowthForm_CTD, "Other")) %>%
+  group_by(GrowthForm_CTD_Category) %>%
+  summarize(Value = sum(IndoPacific_fecundity, na.rm = TRUE)) %>%
+  mutate(Fecundity_Type = "IndoPacific Fecundity")
+
+# Combine the datasets for easier plotting
+combined_data <- bind_rows(fecundity_data, colony_data, indo_pacific_data) %>%
+  group_by(Fecundity_Type) %>%
+  mutate(Proportion = Value / sum(Value))
+
+# Step 3: Plot each fecundity type with proportions for "Top 10" genera and "Other"
+ggplot(combined_data, aes(x = Fecundity_Type, y = Proportion, fill = GrowthForm_CTD_Category)) +
+  geom_bar(stat = "identity", position = "fill", color = "black") +
+  labs(
+    x = "Fecundity Type",
+    y = "Proportion of Total Reproductive Potential",
+    fill = "Growth Form"
+  ) +
+  theme(
+    axis.text.x = element_text(),
+    panel.grid = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black")
+  ) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_brewer(palette = "Spectral")
+```
+
+Genus 
+```{r,echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, fig.width=10, fig.height=5}
+# Step 1: Identify the top 10 genera for each fecundity type
+top10_fecundity <- imputed %>%
+  group_by(Genus) %>%
+  summarize(Total_Fecundity = sum(fecundity, na.rm = TRUE)) %>%
+  arrange(desc(Total_Fecundity)) %>%
+  slice(1:6) %>%
+  pull(Genus)
+
+top10_colony <- imputed %>%
+  group_by(Genus) %>%
+  summarize(Total_Colony_Fecundity = sum(Colony.fecundity, na.rm = TRUE)) %>%
+  arrange(desc(Total_Colony_Fecundity)) %>%
+  slice(1:6) %>%
+  pull(Genus)
+
+top10_indo_pacific <- imputed %>%
+  group_by(Genus) %>%
+  summarize(Total_IndoPacific_Fecundity = sum(IndoPacific_fecundity, na.rm = TRUE)) %>%
+  arrange(desc(Total_IndoPacific_Fecundity)) %>%
+  slice(1:6) %>%
+  pull(Genus)
+
+# Step 2: Create separate dataframes for each fecundity type, categorizing genera as "Top 10" or "Other"
+fecundity_data <- imputed %>%
+  mutate(Genus_Category = ifelse(Genus %in% top10_fecundity, Genus, "Other")) %>%
+  group_by(Genus_Category) %>%
+  summarize(Value = sum(fecundity, na.rm = TRUE)) %>%
+  mutate(Fecundity_Type = "Fecundity")
+
+colony_data <- imputed %>%
+  mutate(Genus_Category = ifelse(Genus %in% top10_colony, Genus, "Other")) %>%
+  group_by(Genus_Category) %>%
+  summarize(Value = sum(Colony.fecundity, na.rm = TRUE)) %>%
+  mutate(Fecundity_Type = "Colony Fecundity")
+
+indo_pacific_data <- imputed %>%
+  mutate(Genus_Category = ifelse(Genus %in% top10_indo_pacific, Genus, "Other")) %>%
+  group_by(Genus_Category) %>%
+  summarize(Value = sum(IndoPacific_fecundity, na.rm = TRUE)) %>%
+  mutate(Fecundity_Type = "IndoPacific Fecundity")
+
+# Combine the datasets for easier plotting
+combined_data <- bind_rows(fecundity_data, colony_data, indo_pacific_data) %>%
+  group_by(Fecundity_Type) %>%
+  mutate(Proportion = Value / sum(Value))
+
+# Step 3: Plot each fecundity type with proportions for "Top 10" genera and "Other"
+ggplot(combined_data, aes(x = Fecundity_Type, y = Proportion, fill = Genus_Category)) +
+  geom_bar(stat = "identity", position = "fill", color = "black") +
+  labs(
+    x = "Fecundity Type",
+    y = "Proportion of Total Reproductive Potential",
+    fill = "Genus"
+  ) +
+  theme(
+    axis.text.x = element_text(),
+    panel.grid = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black")
+  ) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_brewer(palette = "Spectral")
+```
+
+Species 
+
+```{r, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, fig.width=10, fig.height=6}
+# Top 10 species by each fecundity type
+top10_species_fecundity <- imputed %>%
+  group_by(Species) %>%
+  summarize(Total_Fecundity = sum(fecundity, na.rm = TRUE)) %>%
+  arrange(desc(Total_Fecundity)) %>%
+  slice(1:7) %>%
+  pull(Species)
+
+top10_species_colony <- imputed %>%
+  group_by(Species) %>%
+  summarize(Total_Colony_Fecundity = sum(Colony.fecundity, na.rm = TRUE)) %>%
+  arrange(desc(Total_Colony_Fecundity)) %>%
+  slice(1:7) %>%
+  pull(Species)
+
+top10_species_indo_pacific <- imputed %>%
+  group_by(Species) %>%
+  summarize(Total_IndoPacific_Fecundity = sum(IndoPacific_fecundity, na.rm = TRUE)) %>%
+  arrange(desc(Total_IndoPacific_Fecundity)) %>%
+  slice(1:7) %>%
+  pull(Species)
+
+
+
+# Step 2: Create separate dataframes for each fecundity type, one for species and one for growth form, and calculate proportions
+
+# Species data
+species_fecundity_data <- imputed %>%
+  filter(Species %in% top10_species_fecundity) %>%
+  group_by(Species) %>%
+  summarize(Value = sum(fecundity, na.rm = TRUE)) %>%
+  mutate(Fecundity_Type = "Fecundity", Proportion = Value / sum(Value)) %>%
+  arrange(desc(Proportion)) %>%
+  mutate(Species = fct_reorder(Species, Proportion))
+
+species_colony_data <- imputed %>%
+  filter(Species %in% top10_species_colony) %>%
+  group_by(Species) %>%
+  summarize(Value = sum(Colony.fecundity, na.rm = TRUE)) %>%
+  mutate(Fecundity_Type = "Colony Fecundity", Proportion = Value / sum(Value)) %>%
+  arrange(desc(Proportion)) %>%
+  mutate(Species = fct_reorder(Species, Proportion))
+
+species_indo_pacific_data <- imputed %>%
+  filter(Species %in% top10_species_indo_pacific) %>%
+  group_by(Species) %>%
+  summarize(Value = sum(IndoPacific_fecundity, na.rm = TRUE)) %>%
+  mutate(Fecundity_Type = "IndoPacific Fecundity", Proportion = Value / sum(Value)) %>%
+  arrange(desc(Proportion)) %>%
+  mutate(Species = fct_reorder(Species, Proportion))
+
+
+
+# Step 3: Define consistent colors across all plots
+all_species <- unique(c(top10_species_fecundity, top10_species_colony, top10_species_indo_pacific))
+num_species <- length(all_species)
+species_palette <- colorRampPalette(brewer.pal(12, "Spectral"))(num_species)
+names(species_palette) <- all_species
+
+# Step 4: Plot each fecundity type separately as stacked proportion bars for both species and growth form
+
+# For Species
+p_species_fecundity <- ggplot(species_fecundity_data, aes(x = Fecundity_Type, y = Proportion, fill = Species)) +
+  geom_bar(stat = "identity", color = "black") +
+  scale_fill_manual(values = species_palette) +
+  labs(x = "", y = "Proportion of Top 5 Species") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent)
+
+p_species_colony <- ggplot(species_colony_data, aes(x = Fecundity_Type, y = Proportion, fill = Species)) +
+  geom_bar(stat = "identity", color = "black") +
+  scale_fill_manual(values = species_palette) +
+  labs( x = "", y = "") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent)
+
+p_species_indo_pacific <- ggplot(species_indo_pacific_data, aes(x = Fecundity_Type, y = Proportion, fill = Species)) +
+  geom_bar(stat = "identity", color = "black") +
+  scale_fill_manual(values = species_palette) +
+  labs(x = "", y = "") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent)
+
+
+(p_species_fecundity | p_species_colony | p_species_indo_pacific)
+```
+
+Statistics 
+
+
+
+ANOVA for proportions comparing Genus and Growth_Form - first looked at each Fecundity level on its own 
+
+Order is Fecundity, Colony, Indo-Pacific
+
+```{r, echo = FALSE}
+
+
+fecundity_data <- imputed_long %>%
+  filter(Fecundity_Type == "fecundity")%>%
+  mutate(Proportion = Fecundity_Value/sum(Fecundity_Value))
+
+colony_fecundity_data <- imputed_long %>%
+  filter(Fecundity_Type == "Colony.fecundity")%>%
+  mutate(Proportion = Fecundity_Value/sum(Fecundity_Value))
+
+indo_pacific_data <- imputed_long %>%
+  filter(Fecundity_Type == "fecundity")%>%
+  mutate(Proportion = Fecundity_Value/sum(Fecundity_Value))
+
+
+fecundity_anova <- aov(Proportion ~ Genus * GrowthForm_CTD, data = fecundity_data)
+summary(fecundity_anova)
+
+# Colony Fecundity
+colony_fecundity_anova <- aov(Proportion ~ Genus * GrowthForm_CTD, data = colony_fecundity_data)
+summary(colony_fecundity_anova)
+
+# IndoPacific Fecundity
+indo_pacific_anova <- aov(Proportion ~ Genus * GrowthForm_CTD, data = indo_pacific_data)
+summary(indo_pacific_anova)
+
+```
+This may be because it is based on another highly imputed trait colony area -> therefore it would be better to compare the indo-pacific fecudnity as this is a measured percent cover upscaled from Dietzel et al 2019 research. 
+
+
+The Genus and GrowthForm_CTD are the primary drivers of variation in fecundity proportions. This implies that genus and growth form alone have the largest roles in explaining differences in fecundity proportions across the dataset
+
+Since fecundity type alone and its interactions do not significantly impact the model, the differences in proportional fecundity values might be relatively consistent across fecundity types, with genus and growth form still being the primary differentiators.
+```{r, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, fig.width=10, fig.height=6}
+
+# Combine all fecundity data with calculated proportions into a single dataset
+combined_data <- imputed_long %>%
+  group_by(Fecundity_Type) %>%
+  mutate(Proportion = Fecundity_Value / sum(Fecundity_Value, na.rm = TRUE)) %>%
+  ungroup()
+
+# Run a three-way ANOVA on Proportion with interactions between Fecundity_Type, Genus, and GrowthForm_CTD
+three_way_anova <- aov(Proportion ~ Fecundity_Type * Genus * GrowthForm_CTD, data = combined_data)
+summary(three_way_anova)
+
+
+anova <- aov(Proportion ~ Species * Fecundity_Type, data = combined_data)
+summary(anova)
+
+```
+The significant main effects of genus and the interactions between genus and fecundity type, as well as genus and growth form, suggest that genera exhibit unique fecundity patterns influenced by their classification and fecundity types. Growth form alone, however, did not yield a statistically robust impact on fecundity proportions, though it may still play a moderating role.
+
+Species-specific differences strongly affect fecundity proportions, with species responding differently based on fecundity type. This reinforces the role of biological and ecological diversity within species in driving reproductive strategies across different fecundity measures.
+
+```{r, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, fig.width=10, fig.height=6}
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sf)
+
+land_transformed <- readRDS(file = "land_transformed.rds")
+
+coral_shapefile_transformed <- readRDS(file = "coral_shapefile_transformed.rds")
+
+Indo_Pacific_data <- readRDS(file = "Indo_Pacific_data.rds")
+
+
+land <- ne_countries(scale = "medium", returnclass = "sf")
+
+xlim <- c(-6000000, 8000000)  # Extend further east and west
+ylim <- c(-7000000, 6000000)  # Extend further north and south
+
+
+# Plot the Indo-Pacific data with the land map centered around Australia
+ggplot() +
+  geom_sf(data = land_transformed, fill = "white", color = "black") +
+  geom_sf(data = coral_shapefile_transformed, aes(fill = PROVINCE), color = "black") +
+  coord_sf(xlim = xlim, ylim = ylim) +
+  labs(
+    fill = "Region"
+  )
+
+
+
+```
+
+Concluding remarks: 
+
+Species does not have any significance 
+Proportions between Fecundity types for Genus and Growth forms are significant 
+
+Comments to Kate: 
+
+Wondering which graphs to keep or if you have any suggestions for other graphs; besides growth form unsure how to define the function for each of the species. Functions are not in coral traits - however based on growth form can make generalized discussion about the usual functions. Same with the top species and genera, can elaborate on their functions for the reef. 
+
+- Unsure where to find functional info, looked through R code you did for the paper you sent (Future climate warming threatens coral reef function on World Heritage reefs) and saw the trait data was downloaded from McWilliam et al. 2018, however that only showed morphology. 
+
+
+Tried to do a PCA plot and group them but since the data was imputed it follows a somewhat predicatble pattern so there is not much to go off for that. 
+
+Heat map also did not show too much variation between the fecundity levels -> the proportion graphs do a pretty good job showing the variation 
+
+
+
