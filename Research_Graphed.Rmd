@@ -138,19 +138,37 @@ ggplot(fecundity_data, aes(x = Genus, y = Fecundity_Value, fill = Genus)) +
 Average Highest and Lowest Values per Genus
 ```{r,echo=FALSE, message=FALSE, error=FALSE, warning=FALSE, fig.width=15, fig.height=6}
 
-fecundity_data %>%
+fecundity_summary <- fecundity_data %>%
   group_by(Genus) %>%
-  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  summarize(
+    Average_Fecundity = mean(Fecundity_Value, na.rm = TRUE),
+    SD_Fecundity = sd(Fecundity_Value, na.rm = TRUE) / sqrt(n())
+  )
+
+
+# Extract the top 5 genera by average fecundity
+top_5_genera <- fecundity_summary %>%
   arrange(desc(Average_Fecundity)) %>%
   slice(1:5)
 
-fecundity_data %>%
-  group_by(Genus) %>%
-  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
-  arrange((Average_Fecundity)) %>%
+# Extract the bottom 5 genera by average fecundity
+bottom_5_genera <- fecundity_summary %>%
+  arrange(Average_Fecundity) %>%
   slice(1:5)
 
-mean(fecundity_data$Fecundity_Value)
+# Display the top and bottom genera with their SE values
+top_5_genera
+bottom_5_genera
+
+overall_fecundity_summary <- fecundity_data %>%
+  summarize(
+    Total_Average_Fecundity = mean(Fecundity_Value, na.rm = TRUE),
+    Total_SD_Fecundity = sd(Fecundity_Value, na.rm = TRUE) / sqrt(n())
+  )
+
+# Display the overall summary
+print(overall_fecundity_summary)
+
 ```
 
 Average Highest and Lowest Values per Species 
@@ -164,6 +182,24 @@ fecundity_data %>%
 
 fecundity_data %>%
   group_by(Species) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange((Average_Fecundity)) %>%
+  slice(1:5)
+
+
+```
+
+Average Highest and Lowest Values per Genera 
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE, fig.width=15, fig.height=6}
+
+fecundity_data %>%
+  group_by(Genus) %>%
+  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  arrange(desc(Average_Fecundity)) %>%
+  slice(1:5)
+
+fecundity_data %>%
+  group_by(Genus) %>%
   summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
   arrange((Average_Fecundity)) %>%
   slice(1:5)
@@ -272,19 +308,37 @@ Total number of eggs produced, Average Highest and Lowest Values per Genus
 
 sum(indo_pacific_data$Fecundity_Value)
 
-indo_pacific_data %>%
+indo_pacific_summary <- indo_pacific_data %>%
   group_by(Genus) %>%
-  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
+  summarize(
+    Average_Fecundity = mean(Fecundity_Value, na.rm = TRUE),
+    SD_Fecundity = sd(Fecundity_Value, na.rm = TRUE) / sqrt(n())
+  )
+
+
+# Extract the top 5 genera by average fecundity
+top_5_genera <- indo_pacific_summary %>%
   arrange(desc(Average_Fecundity)) %>%
   slice(1:5)
 
-indo_pacific_data %>%
-  group_by(Genus) %>%
-  summarize(Average_Fecundity = mean(Fecundity_Value)) %>%
-  arrange((Average_Fecundity)) %>%
+# Extract the bottom 5 genera by average fecundity
+bottom_5_genera <- indo_pacific_summary %>%
+  arrange(Average_Fecundity) %>%
   slice(1:5)
 
-mean(indo_pacific_data$Fecundity_Value)
+# Display the top and bottom genera with their SE values
+top_5_genera
+bottom_5_genera
+
+overall_indo_pacific_summary <- indo_pacific_data %>%
+  summarize(
+    Total_Average_Fecundity = mean(Fecundity_Value, na.rm = TRUE),
+    Total_SD_Fecundity = sd(Fecundity_Value, na.rm = TRUE) / sqrt(n())
+  )
+
+# Display the overall summary
+print(overall_indo_pacific_summary)
+
 ```
 
 Average Highest and Lowest Values per Species 
@@ -302,6 +356,97 @@ indo_pacific_data %>%
   arrange((Average_Fecundity)) %>%
   slice(1:5)
 ```
+
+Z-score plot 
+
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE}
+library(ggrepel)
+
+# Step 1: Calculate Z-scores for fecundity
+fecundity_z_scores <- fecundity_data %>%
+  group_by(Genus) %>%
+  summarize(Fecundity_Mean = mean(Fecundity_Value, na.rm = TRUE)) %>%
+  mutate(Fecundity_Z = (Fecundity_Mean - mean(Fecundity_Mean)) / sd(Fecundity_Mean))
+
+# Step 2: Calculate Z-scores for Indo-Pacific fecundity
+indo_pacific_z_scores <- indo_pacific_data %>%
+  group_by(Genus) %>%
+  summarize(IndoPacific_Mean = mean(Fecundity_Value, na.rm = TRUE)) %>%
+  mutate(IndoPacific_Z = (IndoPacific_Mean - mean(IndoPacific_Mean)) / sd(IndoPacific_Mean))
+
+# Step 3: Merge the Z-scores for both fecundity types
+combined_z_scores <- fecundity_z_scores %>%
+  inner_join(indo_pacific_z_scores, by = "Genus")
+
+# Step 4: Define genus colors (assuming `genus_colors` is already defined in your environment)
+# genus_colors <- colorRampPalette(brewer.pal(12, "Spectral"))(num_genera)
+# names(genus_colors) <- fecundity_order
+
+# Step 5: Plot the Z-scores with genus colors and selective labels
+ggplot(combined_z_scores, aes(x = Fecundity_Z, y = IndoPacific_Z, fill = Genus)) +
+  geom_point(size = 3, shape = 21, color = "black") +  # shape 21 for outline
+  geom_text_repel(aes(label = Genus), 
+                  box.padding = 0.5, 
+                  max.overlaps = 10,  # Adjust this to control label density
+                  size = 3) +
+  scale_fill_manual(values = genus_colors) +  # Use fill instead of color
+  labs(
+    x = expression("Fecundity per " * cm^2 * " Z-Score"),
+    y = "Indo-Pacific Fecundity Z-Score",
+    fill = "Genus"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),                                     
+    legend.title = element_text(size = 12),         
+    legend.text = element_text(size = 12),                         
+    panel.grid = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black")
+  ) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black")
+
+
+
+```
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE}
+# Calculate the correlation coefficient
+correlation <- cor(imputed$fecundity, imputed$IndoPacific_fecundity, use = "complete.obs")
+
+
+
+# Create the plot
+# Calculate the overall correlation coefficient
+correlation <- cor(imputed$fecundity, imputed$IndoPacific_fecundity, use = "complete.obs")
+
+# Plot with separate colors for genus but a single correlation line
+ggplot(imputed, aes(x = fecundity, y = IndoPacific_fecundity)) +
+  geom_point(aes(fill = Genus), size = 3, shape = 21, color = "black", alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", aes(group = 1)) +  # Single correlation line across all data
+  scale_fill_manual(values = genus_colors) +
+  labs(
+    x = expression("Fecundity per " * cm^2),
+    y = "Indo-Pacific Fecundity",
+    title = paste("r =", round(correlation, 3))
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),                                     
+    legend.title = element_text(size = 12),         
+    legend.text = element_text(size = 12),                         
+    panel.grid = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black")
+  )
+
+```
+
+
+
 
 Statistical Analysis 
 
@@ -383,12 +528,13 @@ indo_pacific_data <- imputed %>%
   mutate(Fecundity_Type = "IndoPacific Fecundity")
 
 # Combine the datasets for easier plotting
-combined_data <- bind_rows(fecundity_data, colony_data, indo_pacific_data) %>%
+combined_data_growthform <- bind_rows(fecundity_data, colony_data, indo_pacific_data) %>%
   group_by(Fecundity_Type) %>%
-  mutate(Proportion = Value / sum(Value))
+  mutate(Proportion = Value / sum(Value))%>%
+  mutate(Fecundity_Type = factor(Fecundity_Type, levels = c("Fecundity", "Colony Fecundity", "IndoPacific Fecundity")))
 
 # Step 3: Plot each fecundity type with proportions for "Top 10" genera and "Other"
-ggplot(combined_data, aes(x = Fecundity_Type, y = Proportion, fill = GrowthForm_CTD_Category)) +
+ggplot(combined_data_growthform, aes(x = Fecundity_Type, y = Proportion, fill = GrowthForm_CTD_Category)) +
   geom_bar(stat = "identity", position = "fill", color = "black") +
   labs(
     x = "Fecundity Type",
@@ -450,12 +596,14 @@ indo_pacific_data <- imputed %>%
   mutate(Fecundity_Type = "IndoPacific Fecundity")
 
 # Combine the datasets for easier plotting
-combined_data <- bind_rows(fecundity_data, colony_data, indo_pacific_data) %>%
+combined_data_genus <- bind_rows(fecundity_data, colony_data, indo_pacific_data) %>%
   group_by(Fecundity_Type) %>%
-  mutate(Proportion = Value / sum(Value))
+  mutate(Proportion = Value / sum(Value)) %>%
+  ungroup() %>%
+  mutate(Fecundity_Type = factor(Fecundity_Type, levels = c("Fecundity", "Colony Fecundity", "IndoPacific Fecundity")))
 
-# Step 3: Plot each fecundity type with proportions for "Top 10" genera and "Other"
-ggplot(combined_data, aes(x = Fecundity_Type, y = Proportion, fill = Genus_Category)) +
+# Plot each fecundity type with proportions for "Top 10" genera and "Other"
+ggplot(combined_data_genus, aes(x = Fecundity_Type, y = Proportion, fill = Genus_Category)) +
   geom_bar(stat = "identity", position = "fill", color = "black") +
   labs(
     x = "Fecundity Type",
@@ -535,35 +683,131 @@ num_species <- length(all_species)
 species_palette <- colorRampPalette(brewer.pal(12, "Spectral"))(num_species)
 names(species_palette) <- all_species
 
-# Step 4: Plot each fecundity type separately as stacked proportion bars for both species and growth form
+# Function to extract the legend from a ggplot
+get_legend <- function(my_plot) {
+  tmp <- ggplotGrob(my_plot)
+  legend <- tmp$grobs[[which(sapply(tmp$grobs, function(x) x$name) == "guide-box")]]
+  return(legend)
+}
 
-# For Species
+combined_species_data <- bind_rows(
+  species_fecundity_data,
+  species_colony_data,
+  species_indo_pacific_data
+)
+
+# Create a new variable that combines Fecundity_Type and Species
+combined_species_data <- combined_species_data %>%
+  group_by(Fecundity_Type) %>%
+  arrange(Proportion) %>%  # Arrange by Proportion within each Fecundity_Type
+  mutate(
+    Species_Fecundity = paste(Fecundity_Type, Species, sep = "_"),
+    Species_Fecundity = factor(Species_Fecundity, levels = unique(Species_Fecundity))
+  ) %>%
+  ungroup()
+
+# Create the legend plot (one of the plots with the legend you want to keep)
+legend_plot <- ggplot(combined_species_data, aes(x = Fecundity_Type, y = Proportion, fill = Species)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = species_palette, name = "Species") +
+  theme_minimal()
+
+# Extract the legend
+legend <- get_legend(legend_plot)
+
+# Now create the three main plots without legends
 p_species_fecundity <- ggplot(species_fecundity_data, aes(x = Fecundity_Type, y = Proportion, fill = Species)) +
   geom_bar(stat = "identity", color = "black") +
   scale_fill_manual(values = species_palette) +
-  labs(x = "", y = "Proportion of Top 5 Species") +
-  theme_minimal() +
+  labs(x = "", y = "Proportion of Top 7 Species") +
+  theme(
+    axis.text.x = element_text(),
+    panel.grid = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black"),
+    legend.position = "none"
+  ) +
   scale_y_continuous(labels = scales::percent)
 
 p_species_colony <- ggplot(species_colony_data, aes(x = Fecundity_Type, y = Proportion, fill = Species)) +
   geom_bar(stat = "identity", color = "black") +
   scale_fill_manual(values = species_palette) +
-  labs( x = "", y = "") +
-  theme_minimal() +
+  labs(x = "", y = "") +
+  theme(
+    axis.text.x = element_text(),
+    panel.grid = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black"),
+    legend.position = "none"
+  ) +
   scale_y_continuous(labels = scales::percent)
 
 p_species_indo_pacific <- ggplot(species_indo_pacific_data, aes(x = Fecundity_Type, y = Proportion, fill = Species)) +
   geom_bar(stat = "identity", color = "black") +
   scale_fill_manual(values = species_palette) +
   labs(x = "", y = "") +
-  theme_minimal() +
+  theme(
+    axis.text.x = element_text(),
+    panel.grid = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white"),
+    axis.line = element_line(color = "black"),
+    legend.position = "none"
+  ) +
   scale_y_continuous(labels = scales::percent)
 
+# Combine the plots with a single legend
+combined_plot <- (p_species_fecundity | p_species_colony | p_species_indo_pacific | legend) 
 
-(p_species_fecundity | p_species_colony | p_species_indo_pacific)
+# Display the combined plot
+print(combined_plot)
+
+# Step 4: Plot each fecundity type separately as stacked proportion bars for both species and growth form
+
+
 ```
 
 Statistics 
+
+Percentage values Genus 
+
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE}
+percentage_genus <- combined_data_genus %>%
+  group_by(Fecundity_Type)%>%
+  mutate(Percent = Proportion * 100)%>%
+  select(Fecundity_Type, Genus_Category, Percent)%>%
+  arrange(Fecundity_Type, Percent)
+
+print(percentage_genus, n = Inf)
+```
+
+Percentage values Growth Form
+
+```{r, echo = FALSE, message=FALSE, error = FALSE, warning=FALSE}
+percentage_growthform <- combined_data_growthform %>%
+  group_by(GrowthForm_CTD_Category)%>%
+  mutate(Percent = Proportion * 100)%>%
+  select(Fecundity_Type, GrowthForm_CTD_Category, Percent)%>%
+  arrange(Fecundity_Type, Percent)
+
+print(percentage_growthform, n = Inf)
+
+# Step 1: Calculate Mean Percent for Branching
+branching_data <- percentage_growthform %>%
+  filter(GrowthForm_CTD_Category %in% c("branching_open", "branching_closed")) 
+
+# Step 2: Calculate Mean Percent for Massive
+massive_data <- percentage_growthform %>%
+  filter(GrowthForm_CTD_Category == "massive") %>%
+  mutate(massive_percent = Percent)  # Keeping the column for clarity
+
+# Display the results
+branching_data
+massive_data
+
+```
 
 
 
